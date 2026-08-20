@@ -24,7 +24,9 @@ Parser spParser;
 String cfgSsid, cfgPass, cfgServerUrl, cfgOtaUrl, cfgOtaManifest;
 long cfgPollMs = 30000;
 bool wifiReady = false;
+bool configReceived = false;
 unsigned long lastPing = 0;
+unsigned long lastHeartbeat = 0;
 
 // ----- WiFi -----
 void connectWifi() {
@@ -60,6 +62,7 @@ void onFrame(uint8_t type, const uint8_t *payload, size_t len) {
       cfgOtaUrl = jsonField(s, "ota_url");
       cfgOtaManifest = jsonField(s, "ota_manifest_url");
       cfgPollMs = jsonFieldInt(s, "poll_ms", 30000);
+      configReceived = true;
       DBG("CONFIG ssid="); DBG(cfgSsid); DBG(" srv="); DBGln(cfgServerUrl);
       connectWifi();
       break;
@@ -118,6 +121,12 @@ void loop() {
   if (millis() - lastPing > 10000) {
     lastPing = millis();
     if (wifiReady) sendFrameStr(Serial, T_PING, "");
+  }
+
+  // 2b. heartbeat před CONFIG — indikuje, že appka běží a čeká na Spresense
+  if (!configReceived && millis() - lastHeartbeat > 3000) {
+    lastHeartbeat = millis();
+    sendFrameStr(Serial, T_STATUS, "WAIT_CONFIG");
   }
 
   // 3. udržuj WiFi (auto-reconnect řeší jádro, jen hlídáme stav)

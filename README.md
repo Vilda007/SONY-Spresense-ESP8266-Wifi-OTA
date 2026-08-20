@@ -73,7 +73,7 @@ arduino-cli upload -p COM6 --fqbn SPRESENSE:spresense:spresense spresense_app
 ## Stav projektu
 
 - [x] Fáze 1 — repozitář a dokumentace
-- [ ] Fáze 2 — D1 mini MVP (WiFi + relay)
+- [x] Fáze 2 — D1 mini MVP (WiFi + relay) — build OK, flash COM15 (ESP8266EX 0x001b3fb7), framing/CRC ověřeno dekódováním rámce `BOOT_WAITING_CONFIG`/`WAIT_CONFIG`
 - [ ] Fáze 3 — Spresense MVP (SD config + Serial2)
 - [ ] Fáze 4 — end-to-end verifikace
 - [ ] Fáze 5 — OTA pipeline (`fwup_client`)
