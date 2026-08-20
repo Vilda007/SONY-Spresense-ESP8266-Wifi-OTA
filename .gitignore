@@ -1,0 +1,40 @@
+# === Secret / config (NIKDY do repa!) ===
+config.json
+*.secret
+*.key
+*.pem
+env.txt
+.env
+
+# === Lokální nástroje a testy (záměrně mimo repozitář) ===
+flash_spk.py
+watch_com.ps1
+Blink/
+
+# === Naklonovaný upstream SDK repozitář (obrovský, duplikát upstreamu) ===
+spresense/
+
+# === Claude lokální konfigurace ===
+.claude/
+
+# === Build artefakty ===
+build/
+*.spk
+*.espk
+*.elf
+*.bin
+*.hex
+*.map
+out/
+
+# === Python / nástroje ===
+__pycache__/
+*.pyc
+
+# === OS / editory ===
+.vs/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

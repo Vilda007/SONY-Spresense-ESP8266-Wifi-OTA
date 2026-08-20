@@ -1,0 +1,9 @@
+{
+  "_comment": "Šablona konfigurace. Zkopíruj jako config.json, vyplň reálné hodnoty a nahraj na SD kartu Spresense. config.json je v .gitignore — nikdy ho necommituj.",
+  "wifi_ssid": "MY_WIFI_SSID",
+  "wifi_pass": "MY_WIFI_PASSWORD",
+  "server_url": "http://example.local/api",
+  "ota_url": "http://example.local/fw/package.bin",
+  "ota_manifest_url": "http://example.local/fw/manifest.json",
+  "poll_interval_ms": 30000
+}
