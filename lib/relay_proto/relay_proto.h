@@ -1,6 +1,6 @@
-// relay_proto.h — společný rámcový protokol Serial2 (viz protocol.md).
-// Zde v headeru, aby Arduino auto-prototyp generátor nehoistoval prototypy nad
-// definice typů (rozbilo by to kompilaci). Includuje se nahoře .ino souboru.
+// relay_proto.h — shared Serial2 framing protocol (see protocol.md).
+// Kept in a header so the Arduino auto-prototype generator does not hoist
+// prototypes above type definitions (which would break compilation).
 
 #ifndef RELAY_PROTO_H
 #define RELAY_PROTO_H
@@ -58,7 +58,7 @@ inline void parserReset(Parser &p) {
   p.st = PS_START; p.len = 0; p.type = 0; p.idx = 0; p.crc = 0; p.overflow = false;
 }
 
-// Vrací true, když je k dispozici kompletní platný rámec; volající čte p.type/p.buf/p.len.
+// Returns true when a complete valid frame is available; the caller reads p.type/p.buf/p.len.
 inline bool parseByte(Parser &p, uint8_t b) {
   switch (p.st) {
     case PS_START:
@@ -89,7 +89,7 @@ inline bool parseByte(Parser &p, uint8_t b) {
   return false;
 }
 
-// Odeslání rámce: 0xAA | len_hi | len_lo | type | payload | crc | 0x55
+// Send a frame: 0xAA | len_hi | len_lo | type | payload | crc | 0x55
 inline void sendFrame(HardwareSerial &port, uint8_t type, const uint8_t *payload, size_t len) {
   if (len > 65535) len = 65535;
   uint8_t hdr[4] = { FRAME_START, (uint8_t)(len >> 8), (uint8_t)(len & 0xFF), type };
@@ -105,7 +105,7 @@ inline void sendFrameStr(HardwareSerial &port, uint8_t type, const String &s) {
   sendFrame(port, type, (const uint8_t *)s.c_str(), s.length());
 }
 
-// Minimální JSON field extractor (ssid/pass/url z CONFIG payload).
+// Minimal JSON field extractor (ssid/pass/url from a CONFIG payload).
 inline String jsonField(const String &json, const char *key) {
   String pat = String("\"") + key + "\":\"";
   int i = json.indexOf(pat);

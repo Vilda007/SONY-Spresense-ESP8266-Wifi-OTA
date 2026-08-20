@@ -1,43 +1,43 @@
 // spresense_relay.ino — SONY Spresense WiFi relay master.
 //
-// Čte config.json z SD karty (tajemství: WiFi SSID/heslo, server/OTA URL) a pošle
-// ho v CONFIG rámci D1 minci přes Serial2 (UART2: PIN_D01 TX / PIN_D00 RX).
-// D1 mini se pak připojí k WiFi a relayuje HTTP. Žádné tajemství v tomto FW.
+// Reads config.json from the SD card (secrets: WiFi SSID/password, server/OTA URL) and sends it
+// in a CONFIG frame to the D1 mini over Serial2 (UART2: PIN_D01 TX / PIN_D00 RX). The D1 mini then
+// joins WiFi and relays HTTP. No secret is stored in this firmware.
 //
-// Konzole/log: Serial  (UART1) -> CP210x COM6 @115200
-// Linka D1 mini: Serial2 (UART2) @115200
+// Console/log: Serial  (UART1) -> CP210x COM6 @115200
+// D1 mini link: Serial2 (UART2) @115200
 //
 // FQBN: SPRESENSE:spresense:spresense (core 3.4.7). Flash: arduino-cli upload -p COM6
-// nebo lokálně python flash_spk.py -c COM6 build/spresense_relay.ino.spk
+// or locally: python flash_spk.py -c COM6 build_spresense/spresense_relay.ino.spk
 
 #include <SDHCI.h>
-#include "relay_proto.h"   // sdílená knihovna lib/relay_proto (compile s --library lib/relay_proto)
+#include "relay_proto.h"   // shared library lib/relay_proto (compile with --library lib/relay_proto)
 
 SDClass SD;
 
 Parser d1Parser;
 bool configLoaded = false;
-String configJson;          // surový obsah config.json (jen pro debug, neposílá se celý)
+String configJson;          // raw config.json content (debug only; never sent whole)
 String wifiSsid, wifiPass, serverUrl, otaUrl, otaManifest;
 long pollMs = 30000;
 
-// Načte config.json z SD. Formát viz config.example.json.
+// Reads config.json from the SD card. Format: see config.example.json.
 void loadConfig() {
   while (!SD.begin()) {
-    Serial.println("SD: vloz SD kartu");
+    Serial.println("SD: insert SD card");
     delay(1000);
   }
   File f = SD.open("config.json", FILE_READ);
   if (!f) {
-    Serial.println("SD: config.json nenalezen");
+    Serial.println("SD: config.json not found");
     return;
   }
   configJson = "";
   while (f.available()) configJson += (char)f.read();
   f.close();
 
-  // config.json používá klíče wifi_ssid/wifi_pass; do CONFIG rámce pro D1 mini
-  // mapujeme na ssid/pass (viz d1_mini_relay jsonField).
+  // config.json uses keys wifi_ssid/wifi_pass; the CONFIG frame for the D1 mini maps them to
+  // ssid/pass (see d1_mini_relay jsonField).
   wifiSsid = jsonField(configJson, "wifi_ssid");
   wifiPass = jsonField(configJson, "wifi_pass");
   serverUrl = jsonField(configJson, "server_url");
@@ -51,11 +51,11 @@ void loadConfig() {
     Serial.print(" server="); Serial.print(serverUrl);
     Serial.print(" poll_ms="); Serial.println(pollMs);
   } else {
-    Serial.println("SD config: neni wifi_ssid -> bez CONFIG");
+    Serial.println("SD config: no wifi_ssid -> no CONFIG");
   }
 }
 
-// Pošle CONFIG rámec D1 minci (subset tajemství). D1 mini se připojí k WiFi.
+// Send the CONFIG frame to the D1 mini (a subset of secrets). The D1 mini joins WiFi.
 void sendConfigToD1() {
   String payload = "{\"ssid\":\"" + wifiSsid + "\","
                    "\"pass\":\"" + wifiPass + "\","
@@ -64,12 +64,12 @@ void sendConfigToD1() {
                    "\"ota_manifest_url\":\"" + otaManifest + "\","
                    "\"poll_ms\":" + String(pollMs) + "}";
   sendFrameStr(Serial2, T_CONFIG, payload);
-  Serial.println("CONFIG odeslan D1 mini");
+  Serial.println("CONFIG sent to D1 mini");
 }
 
 void setup() {
   Serial.begin(115200);    // COM6 log
-  Serial2.begin(115200);   // linka D1 mini (UART2)
+  Serial2.begin(115200);   // D1 mini link (UART2)
   parserReset(d1Parser);
   delay(500);
   Serial.println("Spresense relay boot");
@@ -79,7 +79,7 @@ void setup() {
 
 unsigned long lastDataUp = 0;
 void loop() {
-  // 1. čti rámce z D1 mini
+  // 1. read frames from the D1 mini
   while (Serial2.available()) {
     uint8_t b = Serial2.read();
     if (parseByte(d1Parser, b)) {
@@ -92,12 +92,12 @@ void loop() {
       Serial.print(" len="); Serial.print(l);
       Serial.print(" payload="); Serial.println(s);
       if (t == T_PING) sendFrameStr(Serial2, T_PONG, "");
-      // T_DATA_DOWN = HTTP odpověď ze serveru (fáze 4 verifikace)
-      // T_STATUS = stav D1 mini (IP, WIFI_FAIL, WAIT_CONFIG, ...)
+      // T_DATA_DOWN = HTTP response from the server (phase 4 verification)
+      // T_STATUS = D1 mini status (IP, WIFI_FAIL, WAIT_CONFIG, ...)
     }
   }
 
-  // 2. periodický testovací DATA_UP každých 5 s (MVP verifikace relaye)
+  // 2. periodic test DATA_UP every 5 s (MVP relay verification)
   if (configLoaded && millis() - lastDataUp > 5000) {
     lastDataUp = millis();
     sendFrameStr(Serial2, T_DATA_UP, "hello");

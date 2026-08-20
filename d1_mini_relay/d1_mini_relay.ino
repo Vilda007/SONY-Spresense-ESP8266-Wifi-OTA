@@ -1,25 +1,27 @@
-// d1_mini_relay.ino — LOLIN D1 mini (ESP8266) WiFi client + serial relay pro SONY Spresense.
+// d1_mini_relay.ino — LOLIN D1 mini (ESP8266) WiFi client + serial relay for the SONY Spresense.
 //
-// Linka do Spresense: Serial  (UART0, GPIO1 TX / GPIO3 RX) @115200  -> Serial2 na Spresense.
-// Debug výstup:        Serial1 (TX-only, GPIO2/D4)        @115200  -> druhý USB-serial adaptér.
-//                      (Debug nikdy přes Serial — to je linka do Spresense.)
+// Link to Spresense: Serial  (UART0, GPIO1 TX / GPIO3 RX) @115200  -> Serial2 on the Spresense.
+// Debug output:      Serial1 (TX-only, GPIO2/D4)         @115200  -> second USB-serial adapter.
+//                     (Never debug over Serial — that is the link to the Spresense.)
 //
-// WiFi credentials a endpointy DOSTANE za běhu v CONFIG rámci od Spresense (viz protocol.md).
-// Ve firmware NENÍ žádné hardcoded heslo. Spresense je čte z config.json na SD kartě.
+// WiFi credentials and endpoints are RECEIVED at runtime in a CONFIG frame from the Spresense
+// (see protocol.md). The firmware holds NO hardcoded secret. The Spresense reads them from
+// config.json on the SD card.
 //
 // FQBN: esp8266:esp8266:d1_mini:xtal=80,eesz=4M1M,ip=lm2f,baud=115200
-// POZOR: před flashem přes USB odpojit TX/RX vodiče ke Spresense (UART0 sdílen s CH340).
+// WARNING: before flashing over USB, disconnect the TX/RX wires to the Spresense
+//          (UART0 is shared with the onboard CH340).
 
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
-#include "relay_proto.h"   // sdílená knihovna lib/relay_proto (compile s --library lib/relay_proto)
+#include "relay_proto.h"   // shared library lib/relay_proto (compile with --library lib/relay_proto)
 
-// Debug přes Serial1 (TX-only na D4/GPIO2). Definice před prvním použitím.
+// Debug over Serial1 (TX-only on D4/GPIO2). Defined before first use.
 #define DBG(x)   Serial1.print(x)
 #define DBGln(x) Serial1.println(x)
 
-// ----- Stav -----
+// ----- State -----
 Parser spParser;
 String cfgSsid, cfgPass, cfgServerUrl, cfgOtaUrl, cfgOtaManifest;
 long cfgPollMs = 30000;
@@ -50,7 +52,7 @@ void connectWifi() {
   }
 }
 
-// Zpracování příchozího rámce ze Spresense
+// Handle an incoming frame from the Spresense
 void onFrame(uint8_t type, const uint8_t *payload, size_t len) {
   String s = "";
   for (size_t i = 0; i < len; i++) s += (char)payload[i];
@@ -91,7 +93,7 @@ void onFrame(uint8_t type, const uint8_t *payload, size_t len) {
       sendFrameStr(Serial, T_PONG, "");
       break;
     case T_OTA_AVAIL:
-      // Fáze 5: nyní odmítneme, OTA pipeline se doplní později.
+      // Phase 5: reject for now; the OTA pipeline is added later.
       sendFrame(Serial, T_OTA_ACK, (const uint8_t *)"\x00", 1); // reject
       sendFrameStr(Serial, T_STATUS, "OTA_NOT_IMPLEMENTED_YET");
       break;
@@ -102,8 +104,8 @@ void onFrame(uint8_t type, const uint8_t *payload, size_t len) {
 }
 
 void setup() {
-  Serial.begin(115200);   // linka do Spresense
-  Serial1.begin(115200);  // TX-only debug na D4/GPIO2
+  Serial.begin(115200);   // link to Spresense
+  Serial1.begin(115200);  // TX-only debug on D4/GPIO2
   delay(50);
   parserReset(spParser);
   DBGln("D1 mini relay boot");
@@ -111,25 +113,25 @@ void setup() {
 }
 
 void loop() {
-  // 1. čti rámce ze Spresense (non-blokovací)
+  // 1. read frames from the Spresense (non-blocking)
   while (Serial.available()) {
     uint8_t b = Serial.read();
     if (parseByte(spParser, b)) onFrame(spParser.type, spParser.buf, spParser.len);
   }
 
-  // 2. keepalive PING každých 10 s
+  // 2. keepalive PING every 10 s
   if (millis() - lastPing > 10000) {
     lastPing = millis();
     if (wifiReady) sendFrameStr(Serial, T_PING, "");
   }
 
-  // 2b. heartbeat před CONFIG — indikuje, že appka běží a čeká na Spresense
+  // 2b. heartbeat before CONFIG — signals the app is alive and waiting for the Spresense
   if (!configReceived && millis() - lastHeartbeat > 3000) {
     lastHeartbeat = millis();
     sendFrameStr(Serial, T_STATUS, "WAIT_CONFIG");
   }
 
-  // 3. udržuj WiFi (auto-reconnect řeší jádro, jen hlídáme stav)
+  // 3. keep WiFi up (the core handles auto-reconnect; we just watch the state)
   if (wifiReady && WiFi.status() != WL_CONNECTED) {
     wifiReady = false;
     DBGln("WiFi lost");

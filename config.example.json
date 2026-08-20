@@ -1,5 +1,5 @@
 {
-  "_comment": "Šablona konfigurace. Zkopíruj jako config.json, vyplň reálné hodnoty a nahraj na SD kartu Spresense. config.json je v .gitignore — nikdy ho necommituj.",
+  "_comment": "Config template. Copy to config.json, fill in real values, and put it on the Spresense SD card. config.json is in .gitignore — never commit it.",
   "wifi_ssid": "MY_WIFI_SSID",
   "wifi_pass": "MY_WIFI_PASSWORD",
   "server_url": "http://example.local/api",

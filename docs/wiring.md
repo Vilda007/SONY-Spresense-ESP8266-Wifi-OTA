@@ -1,8 +1,12 @@
 # Wiring — D1 mini ↔ SONY Spresense
 
-## Přehled
+## Overview
 
-D1 mini (ESP8266) komunikuje se Spresense přes **UART2** (`Serial2` na Spresense, `Serial`/UART0 na D1 mini). Obě desky mají oddělené USB-sériové převodníky, takže konzole/programovací porty se nebijí (COM6 = Spresense CP210x, COM21 = D1 mini CH340). Konflikt je jen na **UART0 D1 mini, který je sdílen s onboard CH340** (přes sériové odpory).
+The D1 mini (ESP8266) talks to the Spresense over **UART2** (`Serial2` on the Spresense,
+`Serial`/UART0 on the D1 mini). Both boards have separate USB-serial bridges, so their
+console/programming ports do not collide at the OS level (COM6 = Spresense CP210x,
+COM15 = D1 mini CH340). The only conflict is on the **D1 mini's UART0, which is shared with the
+onboard CH340** (through series resistors).
 
 ## Pinout
 
@@ -12,53 +16,71 @@ D1 mini (ESP8266) komunikuje se Spresense přes **UART2** (`Serial2` na Spresens
    │  TX  (GPIO1)  │──────────────► │  D00  (UART2_RXD)       │
    │  RX  (GPIO3)  │◄────────────── │  D01  (UART2_TXD)       │
    │  GND          │──────────────► │  GND                    │
-   │  5V (USB)     │   (vlastní USB, ne ze Spresense)         │
+   │  5V (USB)     │   (own USB, not from the Spresense)      │
    └───────────────┘                └────────────────────────┘
 ```
 
-| D1 mini pin | GPIO | Směr | Spresense pin | Funkce |
+| D1 mini pin | GPIO | Direction | Spresense pin | Function |
 |---|---|---|---|---|
 | D1 (TX) | GPIO1 | D1 → Spresense | **D00** | UART2_RXD |
 | D3 (RX) | GPIO3 | Spresense → D1 | **D01** | UART2_TXD |
-| GND | — | společný | GND | reference |
-| 5V (VIN) | — | z vlastního USB | — | napájení D1 mini |
+| GND | — | common | GND | reference |
+| 5V (VIN) | — | from own USB | — | D1 mini power |
 
-- `Serial2` na Spresense = UART2. Z `pins_arduino.h` (variant spresense): `PIN_D01 = PIN_UART2_TXD`, `PIN_D00 = PIN_UART2_RXD`, `SERIAL_PORT_HARDWARE = Serial2`.
-- `Serial` (UART1) na Spresense = CP210x konzole COM6 — nezávislé na Serial2, lze používat pro log zároveň.
-- Flow control CTS/RTS (UART2) je na PIN_D27/D28 — pro relay se nevyužívá (SW flow / bez flow control, 115200 je dost rychlé).
+- `Serial2` on the Spresense = UART2. From `pins_arduino.h` (spresense variant):
+  `PIN_D01 = PIN_UART2_TXD`, `PIN_D00 = PIN_UART2_RXD`, `SERIAL_PORT_HARDWARE = Serial2`.
+- `Serial` (UART1) on the Spresense = the CP210x console on COM6 — independent of Serial2, can be
+  used for logging simultaneously.
+- UART2 flow-control CTS/RTS live on PIN_D27/D28 — not used for the relay (no flow control at
+  115200, plenty of headroom).
 
-## Jumpery a napájení
+## Jumpers and power
 
-- **JP1 = 3.3V** na extension boardu. ESP8266 má 3.3V logiku; na 5V by došlo k poškození. Přepni jumper JP1 do polohy 3.3V.
-- **Napájení D1 mini**: z **vlastního USB** (5V přes onboard LDO na 3.3V). **Nikdy** nenapájej D1 mini z 5V/3V3 railu Spresense — WiFi TX špičky ~300 mA způsobí brownout. Společné je jen GND.
-  - Pokud musíš sdílet 5V rail: přidej bulk kondenzátor 470–1000 µF na 5V pin D1 mini a schottky diodu k oddělení propadu. Ověř, že rail během TX špiček nestoupne pod ~3.6 V.
-- **3V3 injekce ze Spresense**: nedoporučuje se.
+- **JP1 = 3.3V** on the extension board. The ESP8266 is 3.3 V logic; 5 V would damage it. Set
+  jumper JP1 to the 3.3 V position.
+- **D1 mini power**: from its **own USB** (5 V through the onboard LDO to 3.3 V). **Never** power
+  the D1 mini from the Spresense 5 V/3 V3 rail — WiFi TX bursts of ~300 mA cause a brownout. Only
+  GND is shared.
+  - If you must share the 5 V rail: add a bulk capacitor (470–1000 µF) at the D1 mini 5 V pin and a
+    schottky diode to decouple sag. Verify the rail stays above ~3.6 V at the LDO input during TX bursts.
+- **3 V3 injection from the Spresense**: not recommended.
 
-## Konflikt UART0 D1 mini (důležité)
+## D1 mini UART0 conflict (important)
 
-UART0 (`Serial`, GPIO1/GPIO3) je na D1 mini trvale propojen přes odpory (~150–470 Ω) s onboard CH340. Důsledek:
+UART0 (`Serial`, GPIO1/GPIO3) is permanently tied on the D1 mini through ~150–470 Ω resistors to the
+onboard CH340. Consequences:
 
-- **Před programováním D1 mini přes USB (COM21)**: **odpoj TX/RX vodiče ke Spresense**. Pokud zůstanou připojené, Spresense drží linku a upload (esptool) může selhat. Pin D3/RX je kritický — CH340 i Spresense by tlačily do sebe.
-- **Během normálního běhu**: neotevírej COM21 v dalším programu (Arduino Serial Monitor atd.) — CH340 by tlačil do linky, kterou sdílí se Spresense.
-- Zmírňující opatření: sériový odpor 1 kΩ na každé linii TX/RX mezi D1 mini a Spresense (omezení konfliktu, plná izolace = odpojení).
+- **Before programming the D1 mini over USB (COM15)**: **disconnect the TX/RX wires to the
+  Spresense**. If left connected, the Spresense holds the line and the upload (esptool) can fail.
+  Pin D3/RX is critical — both the CH340 and the Spresense would drive it.
+- **During normal operation**: do not open COM15 in another program (Arduino Serial Monitor, etc.)
+  — the CH340 would fight the line shared with the Spresense.
+- Mitigation: a 1 kΩ series resistor on each TX/RX line between the D1 mini and the Spresense
+  (limits contention; full isolation = disconnect).
 
-## Debug výstup D1 mini
+## D1 mini debug output
 
-`Serial` D1 mini je rezervován pro linku do Spresense — **debug nikdy přes `Serial.print`** (injektoval by to bajty do rámce do Spresense). Možnosti:
+The D1 mini `Serial` is reserved for the link to the Spresense — **never use `Serial.print` for
+debug** (it would inject bytes into the frame stream to the Spresense). Options:
 
-1. **`Serial1` (TX-only na D4/GPIO2)** → druhý USB-sériový adaptér (RX na D4, společný GND). `Serial1.begin(115200); Serial1.println(...)`. GPIO2 je onboard LED a musí být při resetu HIGH (TX linka idle HIGH → v pořádku, pokud ji nic netáhne dolů).
-2. **WiFi telnet debug**: `WiFiServer telnet(23);` a `print` do připojených klientů. Bez extra HW.
-3. Core debug přes board option: `dbg=Serial1,lvl=HTTP_CLIENT|WIFI`.
+1. **`Serial1` (TX-only on D4/GPIO2)** → a second USB-serial adapter (RX on D4, common GND).
+   `Serial1.begin(115200); Serial1.println(...)`. GPIO2 is the onboard LED and must be HIGH at
+   reset (a TX line idles HIGH — fine as long as nothing pulls it low).
+2. **WiFi telnet debug**: `WiFiServer telnet(23);` and `print` to connected clients. No extra hardware.
+3. Core debug via the board option: `dbg=Serial1,lvl=HTTP_CLIENT|WIFI`.
 
-## Konflikt při flash Spresense
+## Conflict when flashing the Spresense
 
-Během flash Spresense přes COM6 (`arduino-cli upload`) není konflikt s D1 mini na úrovni OS portů, ale pro čistotu **odpoj TX/RX k D1 mini** i při flashi Spresense (zabraňuje zpětnému vedení signálu do ESP8266 během resetu desky).
+Flashing the Spresense over COM6 (`arduino-cli upload`) does not conflict with the D1 mini at the
+OS-port level, but for cleanliness **disconnect the TX/RX wires to the D1 mini** as well (prevents
+back-feeding the ESP8266 during a board reset).
 
 ## Baud
 
-115200 8N1, obě strany shodné. ESP8266 UART0 je dostatečně přesný na 115200 (nepoužívat 74880 — to je boot-ROM rate).
+115200 8N1, matching on both sides. The ESP8266 UART0 is accurate enough at 115200 (do not use
+74880 — that is the boot-ROM rate).
 
-## Související
+## See also
 
-- Architektura: [architecture.md](architecture.md)
-- Řešení problémů: [troubleshooting.md](troubleshooting.md)
+- Architecture: [architecture.md](architecture.md)
+- Troubleshooting: [troubleshooting.md](troubleshooting.md)
