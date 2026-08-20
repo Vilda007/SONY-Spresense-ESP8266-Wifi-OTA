@@ -18,8 +18,9 @@ Přidání WiFi konektivity a OTA aktualizací firmwaru na vývojovou desku **SO
 
 | Cesta | Popis |
 |---|---|
-| `d1_mini/` | Sketch pro D1 mini — WiFi client + sériový relay |
-| `spresense_app/` | Sketch pro Spresense — čtení SD config, Serial2, OTA klient |
+| `d1_mini_relay/` | Sketch pro D1 mini — WiFi client + sériový relay |
+| `spresense_relay/` | Sketch pro Spresense — čtení SD config, Serial2, OTA klient |
+| `lib/relay_proto/` | Sdílená knihovna — rámcový protokol (crc8, parser, framing) |
 | `config.example.json` | Šablona konfigurace (bez reálných hesel) |
 | `protocol.md` | Specifikace rámcového protokolu Serial2 |
 | `docs/architecture.md` | Blokové schéma, datové toky |
@@ -53,14 +54,15 @@ Podrobnosti v [`docs/`](docs/). Vyžaduje [arduino-cli](https://github.com/ardui
 ```bash
 arduino-cli core update-index
 arduino-cli core install esp8266:esp8266
-arduino-cli compile --fqbn esp8266:esp8266:d1_mini:xtal=80,eesz=4M1M,ip=lm2f,baud=115200 d1_mini
-arduino-cli upload -p COM21 --fqbn esp8266:esp8266:d1_mini:xtal=80,eesz=4M1M,ip=lm2f,baud=115200 d1_mini
+arduino-cli compile --fqbn esp8266:esp8266:d1_mini:xtal=80,eesz=4M1M,ip=lm2f,baud=115200 --library lib/relay_proto --output-dir build_d1 d1_mini_relay
+arduino-cli upload -p COM15 --fqbn esp8266:esp8266:d1_mini:xtal=80,eesz=4M1M,ip=lm2f,baud=115200 d1_mini_relay
 ```
 
 **Spresense** (COM6 = vestavěný CP210x):
 ```bash
-arduino-cli compile --fqbn SPRESENSE:spresense:spresense --output-dir build spresense_app
-arduino-cli upload -p COM6 --fqbn SPRESENSE:spresense:spresense spresense_app
+arduino-cli compile --fqbn SPRESENSE:spresense:spresense --library lib/relay_proto --output-dir build_spresense spresense_relay
+arduino-cli upload -p COM6 --fqbn SPRESENSE:spresense:spresense spresense_relay
+# fallback (lokální nástroj, není v repu): python flash_spk.py -c COM6 build_spresense/spresense_relay.ino.spk
 ```
 
 ## Konfigurace (tajemství mimo repozitář)
@@ -74,7 +76,7 @@ arduino-cli upload -p COM6 --fqbn SPRESENSE:spresense:spresense spresense_app
 
 - [x] Fáze 1 — repozitář a dokumentace
 - [x] Fáze 2 — D1 mini MVP (WiFi + relay) — build OK, flash COM15 (ESP8266EX 0x001b3fb7), framing/CRC ověřeno dekódováním rámce `BOOT_WAITING_CONFIG`/`WAIT_CONFIG`
-- [ ] Fáze 3 — Spresense MVP (SD config + Serial2)
+- [x] Fáze 3 — Spresense MVP (SD config + Serial2) — build OK (166 KB spk); flash čeká na COM6 (Spresense momentálně odpojen/CP210x glitch)
 - [ ] Fáze 4 — end-to-end verifikace
 - [ ] Fáze 5 — OTA pipeline (`fwup_client`)
 

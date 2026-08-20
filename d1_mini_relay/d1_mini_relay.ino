@@ -13,7 +13,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
-#include "relay_proto.h"
+#include "relay_proto.h"   // sdílená knihovna lib/relay_proto (compile s --library lib/relay_proto)
 
 // Debug přes Serial1 (TX-only na D4/GPIO2). Definice před prvním použitím.
 #define DBG(x)   Serial1.print(x)
