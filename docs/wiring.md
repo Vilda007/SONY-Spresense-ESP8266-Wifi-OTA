@@ -75,6 +75,28 @@ Flashing the Spresense over COM6 (`arduino-cli upload`) does not conflict with t
 OS-port level, but for cleanliness **disconnect the TX/RX wires to the D1 mini** as well (prevents
 back-feeding the ESP8266 during a board reset).
 
+## Why power the D1 mini from its own USB (not from the Spresense)
+
+Powering the D1 mini from the Spresense 5 V rail (or 3.3 V) is tempting — one fewer cable — but it
+fails in practice for two reasons:
+
+1. **Brownout.** WiFi TX bursts on the ESP8266 pull ~300 mA. The Spresense 5 V regulator cannot
+   sustain that and the ESP8266 brownout-resets mid-connection. Symptoms: `BOOT_WAITING_CONFIG`
+   arrives, the D1 tries `WiFi.begin(...)`, the voltage dips, the chip reboots. Repeats forever.
+   Verified on this project's hardware.
+2. **USB mode blocks the TX line to the Spresense.** Even when the D1 mini is powered from a
+   solid 5 V source **through its own USB**, the onboard CH340 holds GPIO1 (D1 mini TX) idle-HIGH
+   while USB is connected. Any UART frame the ESP8266 sends on TX is fought by the CH340. Result:
+   the Spresense reads garbage or zero bytes on D00, no `RX D1` lines on COM6.
+
+   **Fix:** disconnect USB before depending on D1 TX reaching the Spresense. Power the D1 mini
+   from VIN (5 V) through an external USB charger rated for ≥1 A. Keep GND shared with the
+   Spresense. Then GPIO1 is not held by the CH340 and `WAIT_CONFIG` / `IP=...` frames arrive
+   intact on Spresense D00.
+
+So: power the D1 mini from a USB wall charger, not from the Spresense and not via the PC USB
+that keeps COM15 open. Keep COM15 closed during normal relay operation.
+
 ## Baud
 
 115200 8N1, matching on both sides. The ESP8266 UART0 is accurate enough at 115200 (do not use

@@ -105,21 +105,34 @@ inline void sendFrameStr(HardwareSerial &port, uint8_t type, const String &s) {
   sendFrame(port, type, (const uint8_t *)s.c_str(), s.length());
 }
 
-// Minimal JSON field extractor (ssid/pass/url from a CONFIG payload).
+// Minimal JSON field extractor (ssid/pass/url from a CONFIG payload). Tolerates
+// whitespace around the colon and accepts both "k":"v" and "k": "v".
 inline String jsonField(const String &json, const char *key) {
-  String pat = String("\"") + key + "\":\"";
+  String pat = String("\"") + key + "\"";
   int i = json.indexOf(pat);
   if (i < 0) return "";
   i += pat.length();
+  int n = (int)json.length();
+  while (i < n && (json[i] == ' ' || json[i] == '\t' || json[i] == '\n' || json[i] == '\r')) i++;
+  if (i >= n || json[i] != ':') return "";
+  i++;
+  while (i < n && (json[i] == ' ' || json[i] == '\t')) i++;
+  if (i >= n || json[i] != '"') return "";
+  i++;
   int j = json.indexOf('"', i);
   if (j < 0) return "";
   return json.substring(i, j);
 }
 inline long jsonFieldInt(const String &json, const char *key, long def) {
-  String pat = String("\"") + key + "\":";
+  String pat = String("\"") + key + "\"";
   int i = json.indexOf(pat);
   if (i < 0) return def;
   i += pat.length();
+  int n = (int)json.length();
+  while (i < n && (json[i] == ' ' || json[i] == '\t' || json[i] == '\n' || json[i] == '\r')) i++;
+  if (i >= n || json[i] != ':') return def;
+  i++;
+  while (i < n && (json[i] == ' ' || json[i] == '\t')) i++;
   return json.substring(i).toInt();
 }
 

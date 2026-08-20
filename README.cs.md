@@ -27,8 +27,10 @@ Přidání WiFi konektivity a OTA aktualizací firmwaru na vývojovou desku **SO
 | `protocol.md` | Specifikace rámcového protokolu Serial2 |
 | `docs/architecture.md` | Blokové schéma, datové toky |
 | `docs/wiring.md` | Pinout D1 mini ↔ Spresense, JP1, napájení |
-| `docs/ota-mechanics.md` | `fwup_client` API, formát `package.bin`, A/B swap |
-| `docs/troubleshooting.md` | Známé problémy (UART0 konflikt, CP210x glitch) |
+| `docs/troubleshooting.md` | Známé problémy (UART2 pinmux, USB-mode TX konflikt, brownout) |
+| `tools/test_server.py` | Minimální HTTP echo server pro end-to-end verifikaci |
+| `tools/read_com.py` | Zachycení text+hex dumpu COM portu na N sekund |
+| `tools/send_config.py` | Injekce CONFIG rámce do D1 mini přes USB (izolovaný WiFi test) |
 
 ## Hardware
 
@@ -78,8 +80,8 @@ arduino-cli upload -p COM6 --fqbn SPRESENSE:spresense:spresense spresense_relay
 
 - [x] Fáze 1 — repozitář a dokumentace
 - [x] Fáze 2 — D1 mini MVP (WiFi + relay) — build OK, flash COM15 (ESP8266EX 0x001b3fb7), framing/CRC ověřeno dekódováním rámce `BOOT_WAITING_CONFIG`/`WAIT_CONFIG`
-- [x] Fáze 3 — Spresense MVP (SD config + Serial2) — build OK (166 KB spk); flash čeká na COM6 (Spresense momentálně odpojen/CP210x glitch)
-- [ ] Fáze 4 — end-to-end verifikace
+- [x] Fáze 3 — Spresense MVP (SD config + Serial2) — build OK (167 KB spk); flash na COM6 přes arduino-cli (validation OK); boot, čtení SD, odeslání CONFIG/DATA_UP
+- [x] **Fáze 4 — wiring + UART2 routing fix ověřen** — viz [docs/troubleshooting.md](docs/troubleshooting.md) §1 (Arduino core nekonfiguruje CXD5602 pinmux pro UART2; v `setup()` je nutné volat `cxd56_pin_config(PINCONF_UART2_TXD/RXD)`); end-to-end loop (CONFIG → WiFi → POST → DATA_DOWN) ověřen v izolaci přes `tools/send_config.py` (D1 poslala POST `hello` na test server a dostala `ACK:hello`); finální křížené RX/TX ověření se Spresense masterem čeká na napájení D1 přes VIN (ne USB) — viz `docs/wiring.md`
 - [ ] Fáze 5 — OTA pipeline (`fwup_client`)
 
 ## Licence

@@ -9,9 +9,18 @@
 //
 // FQBN: SPRESENSE:spresense:spresense (core 3.4.7). Flash: arduino-cli upload -p COM6
 // or locally: python flash_spk.py -c COM6 build_spresense/spresense_relay.ino.spk
+//
+// IMPORTANT: Arduino core 3.4.7's Serial2.begin() does NOT route UART2 to D00/D01 on
+// the CXD5602 — we have to call the SDK pinconfig manually before begin(). See
+// docs/troubleshooting.md for the full write-up.
 
 #include <SDHCI.h>
 #include "relay_proto.h"   // shared library lib/relay_proto (compile with --library lib/relay_proto)
+
+extern "C" {
+  #include <arch/board/board_pinconfig.h>   // PINCONF_UART2_TXD, PINCONF_UART2_RXD
+  #include <chip/cxd56_pinconfig.h>          // cxd56_pin_config()
+}
 
 SDClass SD;
 
@@ -69,10 +78,18 @@ void sendConfigToD1() {
 
 void setup() {
   Serial.begin(115200);    // COM6 log
-  Serial2.begin(115200);   // D1 mini link (UART2)
-  parserReset(d1Parser);
-  delay(500);
+  delay(300);
   Serial.println("Spresense relay boot");
+
+  // Route UART2 (Serial2) to D0 (RX) and D1 (TX) on the extension board Arduino header.
+  // Without this, Serial2.begin() opens /dev/ttyS2 but the SoC pinmux stays on GPIO —
+  // no data on the wire. See docs/troubleshooting.md.
+  cxd56_pin_config(PINCONF_UART2_TXD);
+  cxd56_pin_config(PINCONF_UART2_RXD);
+
+  Serial2.begin(115200, SERIAL_8N1 | SERIAL_CTS | SERIAL_RTS);   // D1 mini link (UART2)
+  parserReset(d1Parser);
+  delay(200);
   loadConfig();
   if (configLoaded) sendConfigToD1();
 }

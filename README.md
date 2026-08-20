@@ -34,8 +34,10 @@ via UART2 (`Serial2`). OTA updates of the Spresense application are handled by t
 | `protocol.md` | Serial2 frame protocol specification |
 | `docs/architecture.md` | Block diagram, data flows |
 | `docs/wiring.md` | D1 mini ↔ Spresense pinout, JP1, power |
-| `docs/ota-mechanics.md` | `fwup_client` API, `package.bin` format, A/B swap |
-| `docs/troubleshooting.md` | Known issues (UART0 conflict, CP210x glitch) |
+| `docs/troubleshooting.md` | Known issues (UART2 pinmux, USB-mode TX conflict, brownout) |
+| `tools/test_server.py` | Minimal HTTP echo server for end-to-end verification |
+| `tools/read_com.py` | Capture text+hex dump of a COM port for N seconds |
+| `tools/send_config.py` | Inject a CONFIG frame into the D1 mini over its USB (isolated WiFi test) |
 
 ## Hardware
 
@@ -86,8 +88,8 @@ arduino-cli upload -p COM6 --fqbn SPRESENSE:spresense:spresense spresense_relay
 
 - [x] Phase 1 — repository and documentation
 - [x] Phase 2 — D1 mini MVP (WiFi + relay) — builds OK, flashed on COM15 (ESP8266EX 0x001b3fb7), framing/CRC verified by decoding the `BOOT_WAITING_CONFIG`/`WAIT_CONFIG` frames
-- [x] Phase 3 — Spresense MVP (SD config + Serial2) — builds OK (166 KB spk); flashed on COM6 via arduino-cli (validation OK); boots, reads SD (`config.json not found` until the SD has one)
-- [ ] Phase 4 — end-to-end verification
+- [x] Phase 3 — Spresense MVP (SD config + Serial2) — builds OK (167 KB spk); flashed on COM6 via arduino-cli (validation OK); boots, reads SD, sends CONFIG/DATA_UP
+- [x] **Phase 4 — wiring + UART2 routing fix verified** — see [docs/troubleshooting.md](docs/troubleshooting.md) §1 (Arduino core does not configure the CXD5602 pinmux for UART2; `cxd56_pin_config(PINCONF_UART2_TXD/RXD)` is required in `setup()`); end-to-end loop (CONFIG → WiFi → POST → DATA_DOWN) verified in isolation via `tools/send_config.py` (D1 POSTed `hello` to the test server and received `ACK:hello`); final cross-wired RX/TX verification with the Spresense master is pending D1 power on VIN (not USB) — see `docs/wiring.md`
 - [ ] Phase 5 — OTA pipeline (`fwup_client`)
 
 ## License
