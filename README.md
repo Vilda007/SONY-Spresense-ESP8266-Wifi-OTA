@@ -86,7 +86,7 @@ arduino-cli upload -p COM6 --fqbn SPRESENSE:spresense:spresense spresense_relay
 
 - [x] Phase 1 — repository and documentation
 - [x] Phase 2 — D1 mini MVP (WiFi + relay) — builds OK, flashed on COM15 (ESP8266EX 0x001b3fb7), framing/CRC verified by decoding the `BOOT_WAITING_CONFIG`/`WAIT_CONFIG` frames
-- [x] Phase 3 — Spresense MVP (SD config + Serial2) — builds OK (166 KB spk); flash pending COM6 (Spresense currently disconnected / CP210x glitch)
+- [x] Phase 3 — Spresense MVP (SD config + Serial2) — builds OK (166 KB spk); flashed on COM6 via arduino-cli (validation OK); boots, reads SD (`config.json not found` until the SD has one)
 - [ ] Phase 4 — end-to-end verification
 - [ ] Phase 5 — OTA pipeline (`fwup_client`)
 
