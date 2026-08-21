@@ -30,6 +30,19 @@ String configJson;          // raw config.json content (debug only; never sent w
 String wifiSsid, wifiPass, serverUrl, otaUrl, otaManifest;
 long pollMs = 30000;
 
+// CONFIG resend campaign: keep re-sending CONFIG until the D1 confirms with an
+// "IP=..." status frame. This handles the boot-timing race where the D1 misses
+// the one-shot CONFIG from setup() (e.g. the D1 booted after the Spresense had
+// already sent it). Bounded by CONFIG_MAX_RESENDS so a missing D1-TX ->
+// Spresense-RX feedback wire (where we never see the D1's IP=) cannot thrash
+// the D1's WiFi forever. On WiFi_FAIL/WIFI_LOST the campaign restarts.
+bool d1Connected = false;        // confirmed via D1 "IP=" status frame
+bool configGivenUp = false;      // true after CONFIG_MAX_RESENDS w/o IP=
+unsigned long lastConfigSend = 0;
+int configResends = 0;
+const unsigned long CONFIG_RESEND_MS = 5000;
+const int CONFIG_MAX_RESENDS = 6;
+
 // Reads config.json from the SD card. Format: see config.example.json.
 void loadConfig() {
   while (!SD.begin()) {
@@ -91,7 +104,10 @@ void setup() {
   parserReset(d1Parser);
   delay(200);
   loadConfig();
-  if (configLoaded) sendConfigToD1();
+  if (configLoaded) {
+    sendConfigToD1();
+    lastConfigSend = millis();   // start the resend campaign timer
+  }
 }
 
 unsigned long lastDataUp = 0;
@@ -110,11 +126,44 @@ void loop() {
       Serial.print(" payload="); Serial.println(s);
       if (t == T_PING) sendFrameStr(Serial2, T_PONG, "");
       // T_DATA_DOWN = HTTP response from the server (phase 4 verification)
-      // T_STATUS = D1 mini status (IP, WIFI_FAIL, WAIT_CONFIG, ...)
+      // T_STATUS = D1 mini status: IP=..., WiFi_FAIL, WIFI_LOST, WAIT_CONFIG, ...
+      if (t == T_STATUS) {
+        if (s.startsWith("IP=")) {
+          if (!d1Connected) {
+            d1Connected = true;
+            Serial.println("D1 ONLINE (CONFIG confirmed)");
+          }
+        } else if (s == "WiFi_FAIL" || s == "WIFI_LOST") {
+          // D1 lost WiFi (or never got it) -> restart the CONFIG resend campaign.
+          d1Connected = false;
+          configResends = 0;
+          configGivenUp = false;
+          lastConfigSend = millis();
+          Serial.println("D1 lost WiFi -> will resend CONFIG");
+        }
+        // WAIT_CONFIG / BOOT_WAITING_CONFIG -> keep resending (handled below)
+      }
     }
   }
 
-  // 2. periodic test DATA_UP every 5 s (MVP relay verification)
+  // 2. Resend CONFIG until the D1 confirms (IP=) or we hit the retry cap.
+  //    Handles the boot-timing race where the D1 misses the one-shot CONFIG
+  //    from setup(). Bounded so a missing feedback wire can't thrash the
+  //    D1's WiFi forever.
+  if (configLoaded && !d1Connected && !configGivenUp &&
+      millis() - lastConfigSend > CONFIG_RESEND_MS) {
+    lastConfigSend = millis();
+    configResends++;
+    if (configResends <= CONFIG_MAX_RESENDS) {
+      sendConfigToD1();
+      Serial.print("CONFIG resend #"); Serial.println(configResends);
+    } else {
+      configGivenUp = true;
+      Serial.println("CONFIG: no IP= from D1 after max resends; giving up (check D1-TX->Spresense-RX wire)");
+    }
+  }
+
+  // 3. periodic test DATA_UP every 5 s (MVP relay verification)
   if (configLoaded && millis() - lastDataUp > 5000) {
     lastDataUp = millis();
     sendFrameStr(Serial2, T_DATA_UP, "hello");

@@ -5,6 +5,9 @@ config.json
 *.pem
 env.txt
 .env
+# Auto-generated test credentials (from ~/.d1_test_pass via tools/gen_test_creds.py)
+**/test_creds.h
+d1_diag/test_ssid_pass.h
 
 # === Lokální nástroje a testy (záměrně mimo repozitář) ===
 flash_spk.py
@@ -19,6 +22,7 @@ spresense/
 
 # === Build artefakty ===
 build/
+build_d1*/
 *.spk
 *.espk
 *.elf
@@ -38,3 +42,8 @@ __pycache__/
 *.swp
 .DS_Store
 Thumbs.db
+
+# === Test / debug logs (may contain IPs / request bodies) ===
+*.log
+test_server.log
+flash_d1_test.log

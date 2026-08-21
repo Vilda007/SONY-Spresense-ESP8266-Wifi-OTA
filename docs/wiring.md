@@ -2,105 +2,124 @@
 
 ## Overview
 
-The D1 mini (ESP8266) talks to the Spresense over **UART2** (`Serial2` on the Spresense,
-`Serial`/UART0 on the D1 mini). Both boards have separate USB-serial bridges, so their
-console/programming ports do not collide at the OS level (COM6 = Spresense CP210x,
-COM15 = D1 mini CH340). The only conflict is on the **D1 mini's UART0, which is shared with the
-onboard CH340** (through series resistors).
+The D1 mini (ESP8266) talks to the Spresense over **UART2** (`Serial2` on the Spresense).
+The link is **split across two D1 mini UARTs** because of the onboard CH340 (see
+"GPIO1 is CH340-clamped" below):
 
-## Pinout
+- **D1 → Spresense** (status/data TX) uses **`Serial1` on GPIO2** — not CH340-shared.
+- **Spresense → D1** (CONFIG/DATA_UP RX) uses **`Serial` (UART0 RX) on GPIO3**.
+
+Both boards have separate USB-serial bridges, so their console/programming ports do not
+collide at the OS level (COM6 = Spresense CP210x, COM15 = D1 mini CH340).
 
 ```
-   D1 mini (ESP8266)                 Spresense extension board
-   ┌───────────────┐                ┌────────────────────────┐
-   │  TX  (GPIO1)  │──────────────► │  D00  (UART2_RXD)       │
-   │  RX  (GPIO3)  │◄────────────── │  D01  (UART2_TXD)       │
-   │  GND          │──────────────► │  GND                    │
-   │  5V (USB)     │   (own USB, not from the Spresense)      │
-   └───────────────┘                └────────────────────────┘
+   D1 mini (ESP8266)                   Spresense extension board
+   ┌───────────────────┐              ┌────────────────────────┐
+   │  "2" (GPIO2) TX   │────────────► │  D00  (UART2_RXD)       │  Serial1 @115200
+   │  "rx" (GPIO3) RX  │◄──────────── │  D01  (UART2_TXD)       │  UART0 RX @115200
+   │  GND              │────────────► │  GND                    │
+   │  vbus (5V USB)    │   own ≥1 A charger or PC USB (NOT Spresense)
+   └───────────────────┘              └────────────────────────┘
+   (debug: "tx" GPIO1 → COM15, bench only — see "Debug output")
 ```
 
-| D1 mini pin | GPIO | Direction | Spresense pin | Function |
+| D1 mini pin (silkscreen) | GPIO | Direction | Spresense pin | Function |
 |---|---|---|---|---|
-| D1 (TX) | GPIO1 | D1 → Spresense | **D00** | UART2_RXD |
-| D3 (RX) | GPIO3 | Spresense → D1 | **D01** | UART2_TXD |
+| **2** (Serial1 TX) | GPIO2 | D1 → Spresense | **D00** | UART2_RXD (status/data frames) |
+| **rx** (UART0 RX) | GPIO3 | Spresense → D1 | **D01** | UART2_TXD (CONFIG / DATA_UP) |
 | GND | — | common | GND | reference |
-| 5V (VIN) | — | from own USB | — | D1 mini power |
+| vbus (5V) | — | own USB | — | D1 mini power (≥1 A) |
+
+> D1 mini v4 silkscreen uses raw GPIO numbers: `tx(=GPIO1) rx(=GPIO3) 5(SCL) 4(SDA) 0(=GPIO0)
+> 2(=GPIO2) gnd vbus`. The exposed non-strap, non-CH340 GPIOs are GPIO4 and GPIO5; **GPIO2 is
+> the only clean TX path** (Serial1, TX-only) and it doubles as the onboard blue LED.
 
 - `Serial2` on the Spresense = UART2. From `pins_arduino.h` (spresense variant):
   `PIN_D01 = PIN_UART2_TXD`, `PIN_D00 = PIN_UART2_RXD`, `SERIAL_PORT_HARDWARE = Serial2`.
-- `Serial` (UART1) on the Spresense = the CP210x console on COM6 — independent of Serial2, can be
+- `Serial` (UART1) on the Spresense = the CP210x console on COM6 — independent of Serial2,
   used for logging simultaneously.
 - UART2 flow-control CTS/RTS live on PIN_D27/D28 — not used for the relay (no flow control at
   115200, plenty of headroom).
 
+## GPIO1 is CH340-clamped — that is why TX moved to GPIO2
+
+UART0 TX (**GPIO1**, the D1 mini "tx" pin) is permanently tied through a ~150–470 Ω series
+resistor to the onboard CH340. This makes GPIO1 **unusable as the link TX in both power
+states**:
+
+- **D1 on a charger / Spresense power (CH340 unpowered):** the CH340's ESD-protection diodes
+  clamp the GPIO1 swing to roughly **0.7 V ↔ 1.8 V** — below the Spresense D00 VIH (~2.3 V), so
+  the Spresense reads idle/garbage and never sees a frame. (Measured with a multimeter on this
+  project's hardware.)
+- **D1 on USB (CH340 powered):** the CH340 actively holds/fights the line, again corrupting the
+  frame.
+
+**Fix (in production FW `d1_mini_relay.ino`):** status/data TX moved to **`Serial1` on GPIO2**,
+which is NOT shared with the CH340 → clean rail-to-rail swing. Validated: clean
+`AA 00 0B 10 … 95 55` WAIT_CONFIG frames arrive on D00 every 3 s, rock-steady. CONFIG/DATA_UP RX
+stays on **UART0 RX (GPIO3)**, which is fine — the CH340's TXD output (also on GPIO3) idles
+high-Z and does not block the Spresense D01 driving the line (verified end-to-end with the D1 on
+USB).
+
+## GPIO2 is a boot-strap pin — keep the D00 load light
+
+GPIO2 **must be HIGH at boot** (ESP8266 boot strap). It also drives the onboard LED and the D00
+wire. A disturbed strap during power-cycling can cause a transient crash loop
+(`Fatal exception (0)`, epc1≈0x4010000x). Rules:
+
+- Keep the GPIO2→D00 load light (the Spresense D00 input is high-Z + weak pull-up — OK).
+- **Do not hot-plug the GPIO2 wire while cycling power** — connect it, then power up, or
+  connect it after the D1 has booted (UART TX is static-level; hot-plugging after boot is safe).
+- If the D1 ever shows a solid-on LED (GPIO2 stuck low) right after re-wiring, re-power it
+  cleanly before declaring a fault — this is almost always the strap, not corrupt flash (see
+  [troubleshooting.md](troubleshooting.md) §3).
+
 ## Jumpers and power
 
-- **JP1 = 3.3V** on the extension board. The ESP8266 is 3.3 V logic; 5 V would damage it. Set
-  jumper JP1 to the 3.3 V position.
-- **D1 mini power**: from its **own USB** (5 V through the onboard LDO to 3.3 V). **Never** power
-  the D1 mini from the Spresense 5 V/3 V3 rail — WiFi TX bursts of ~300 mA cause a brownout. Only
-  GND is shared.
-  - If you must share the 5 V rail: add a bulk capacitor (470–1000 µF) at the D1 mini 5 V pin and a
-    schottky diode to decouple sag. Verify the rail stays above ~3.6 V at the LDO input during TX bursts.
-- **3 V3 injection from the Spresense**: not recommended.
-
-## D1 mini UART0 conflict (important)
-
-UART0 (`Serial`, GPIO1/GPIO3) is permanently tied on the D1 mini through ~150–470 Ω resistors to the
-onboard CH340. Consequences:
-
-- **Before programming the D1 mini over USB (COM15)**: **disconnect the TX/RX wires to the
-  Spresense**. If left connected, the Spresense holds the line and the upload (esptool) can fail.
-  Pin D3/RX is critical — both the CH340 and the Spresense would drive it.
-- **During normal operation**: do not open COM15 in another program (Arduino Serial Monitor, etc.)
-  — the CH340 would fight the line shared with the Spresense.
-- Mitigation: a 1 kΩ series resistor on each TX/RX line between the D1 mini and the Spresense
-  (limits contention; full isolation = disconnect).
+- **JP1 = 3.3 V** on the extension board. The ESP8266 is 3.3 V logic; 5 V would damage it. Set
+  jumper JP1 to the 3.3 V position. (JP1 concerns the Spresense extension I/O voltage; the D1
+  is powered from its own USB, not from the extension header.)
+- **D1 mini power — use a ≥1 A USB wall charger OR a PC USB port.** Both work: the relay was
+  verified end-to-end on PC USB (`D1 ONLINE`, `IP=192.168.1.171`, `ACK:hello` round-trip), and
+  on a ≥1 A charger. TX is on GPIO2 (not CH340-shared), so a powered CH340 no longer blocks the
+  link. Use a short, thick USB cable — cheap thin cables sag under the WiFi-TX current peaks.
+- **NEVER power the D1 from the Spresense 5 V or 3 V3 rail.** The ESP8266 WiFi-TX bursts pull
+  ~350–500 mA; the Spresense board's own 5 V/3 V3 path to the extension header (PMIC/polyfuse/
+  diode-drop) cannot supply it → brownout. Verified 2026-08-21: both 3 V3→3 V3 and 5 V→vbus
+  brownout identically (onboard LED solid-on = GPIO2 stuck low, D1 never reaches `loop()`, zero
+  `RX D1` frames). A stiffer upstream PC USB port did **not** help — the limiter is the Spresense
+  board, not the port.
+- **A too-weak external USB also brownouts.** A weak charger, a thin/high-resistance cable, or
+  an unpowered/overloaded hub gives the same solid-on-LED brownout as the Spresense rail. If the
+  D1 LED is solid-on and no `RX D1` frames appear, fix the supply first (see
+  [troubleshooting.md](troubleshooting.md) §8).
+- Only **GND** is shared between the D1 and the Spresense. The USB grounds alone are NOT a
+  substitute — run an explicit GND wire.
 
 ## D1 mini debug output
 
-The D1 mini `Serial` is reserved for the link to the Spresense — **never use `Serial.print` for
-debug** (it would inject bytes into the frame stream to the Spresense). Options:
+The D1 mini link no longer uses UART0 TX, so **`Serial` (UART0 TX, GPIO1) is free for debug** —
+but only while the D1 is on USB (readable on COM15; clamped/unreadable on a charger, and nothing
+listens in production). In `d1_mini_relay.ino` the `DBG`/`DBGln` macros print to `Serial`.
+Nothing on the relay path uses UART0 TX, so debug prints do not inject bytes into the frame
+stream. Do **not** open COM15 during normal relay operation (opening COM15 resets the D1 via DTR
+and disturbs the UART0 RX line shared with the Spresense).
 
-1. **`Serial1` (TX-only on D4/GPIO2)** → a second USB-serial adapter (RX on D4, common GND).
-   `Serial1.begin(115200); Serial1.println(...)`. GPIO2 is the onboard LED and must be HIGH at
-   reset (a TX line idles HIGH — fine as long as nothing pulls it low).
-2. **WiFi telnet debug**: `WiFiServer telnet(23);` and `print` to connected clients. No extra hardware.
-3. Core debug via the board option: `dbg=Serial1,lvl=HTTP_CLIENT|WIFI`.
+## Before flashing either board over USB
 
-## Conflict when flashing the Spresense
+- **D1 mini (COM15):** disconnect the GPIO2→D00 and GPIO3←D01 wires first. UART0 is shared with
+  the onboard CH340; if the Spresense holds the RX line, esptool can fail to enter download mode.
+- **Spresense (COM6):** flashing does not conflict at the OS-port level, but disconnect the
+  D1 wires for cleanliness (prevents back-feeding the ESP8266 during a board reset).
 
-Flashing the Spresense over COM6 (`arduino-cli upload`) does not conflict with the D1 mini at the
-OS-port level, but for cleanliness **disconnect the TX/RX wires to the D1 mini** as well (prevents
-back-feeding the ESP8266 during a board reset).
-
-## Why power the D1 mini from its own USB (not from the Spresense)
-
-Powering the D1 mini from the Spresense 5 V rail (or 3.3 V) is tempting — one fewer cable — but it
-fails in practice for two reasons:
-
-1. **Brownout.** WiFi TX bursts on the ESP8266 pull ~300 mA. The Spresense 5 V regulator cannot
-   sustain that and the ESP8266 brownout-resets mid-connection. Symptoms: `BOOT_WAITING_CONFIG`
-   arrives, the D1 tries `WiFi.begin(...)`, the voltage dips, the chip reboots. Repeats forever.
-   Verified on this project's hardware.
-2. **USB mode blocks the TX line to the Spresense.** Even when the D1 mini is powered from a
-   solid 5 V source **through its own USB**, the onboard CH340 holds GPIO1 (D1 mini TX) idle-HIGH
-   while USB is connected. Any UART frame the ESP8266 sends on TX is fought by the CH340. Result:
-   the Spresense reads garbage or zero bytes on D00, no `RX D1` lines on COM6.
-
-   **Fix:** disconnect USB before depending on D1 TX reaching the Spresense. Power the D1 mini
-   from VIN (5 V) through an external USB charger rated for ≥1 A. Keep GND shared with the
-   Spresense. Then GPIO1 is not held by the CH340 and `WAIT_CONFIG` / `IP=...` frames arrive
-   intact on Spresense D00.
-
-So: power the D1 mini from a USB wall charger, not from the Spresense and not via the PC USB
-that keeps COM15 open. Keep COM15 closed during normal relay operation.
+Mitigation for leaving wires connected: a 1 kΩ series resistor on each TX/RX line between the D1
+and the Spresense limits contention (full isolation = disconnect).
 
 ## Baud
 
 115200 8N1, matching on both sides. The ESP8266 UART0 is accurate enough at 115200 (do not use
-74880 — that is the boot-ROM rate).
+74880 — that is the boot-ROM rate; reading it at 115200 yields garbage that looks like a crash
+loop but is not).
 
 ## See also
 

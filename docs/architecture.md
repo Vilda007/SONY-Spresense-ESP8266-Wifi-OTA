@@ -16,8 +16,9 @@ config confined to the physical device** — out of the repository and out of th
    │  (+OTA host) │                        │  WiFi STA+client  │
    └──────────────┘                        │  + relay          │
                                            └─────────┬────────┘
-                                                     │ Serial (UART0, 115200)
-                                                     │ framed protocol
+                                                     │ D1 → Spresense: Serial1 (GPIO2) TX
+                                                     │ Spresense → D1: UART0  (GPIO3) RX
+                                                     │ @115200, framed protocol
                                                      ▼
    ┌─────────────────────────────────────────────────────────────┐
    │  SONY Spresense (CXD5602)                                    │
@@ -28,10 +29,17 @@ config confined to the physical device** — out of the repository and out of th
    └─────────────────────────────────────────────────────────────┘
 ```
 
+> The D1↔Spresense link is split across two D1 mini UARTs: **`Serial1` on GPIO2** carries
+> status/data **TX** to the Spresense D00 (GPIO1/UART0-TX is permanently CH340-clamped and
+> unusable — see [wiring.md](wiring.md)), while **`Serial` (UART0 RX, GPIO3)** receives
+> CONFIG/DATA_UP from the Spresense D01.
+
 ## Data flows
 
 1. **Boot**: the Spresense reads `config.json` from SD → sends a `CONFIG` frame (ssid/pass/url)
-   to the D1 mini over Serial2. The D1 mini joins WiFi. No hardcoded secret exists anywhere in firmware.
+   to the D1 mini over Serial2. The D1 mini joins WiFi and replies `IP=` (the Spresense resends
+   CONFIG every 5 s until `IP=` arrives, then stops; on `WiFi_FAIL`/`WIFI_LOST` it restarts the
+   campaign). No hardcoded secret exists anywhere in firmware.
 2. **Telemetry (DATA_UP)**: the Spresense collects sensor data → `DATA_UP` frame → the D1 mini
    HTTP-POSTs it to `server_url` → HTTP response → `DATA_DOWN` frame back to the Spresense.
 3. **Server command (DATA_DOWN)**: the server can embed a command in the HTTP response; the D1 mini
